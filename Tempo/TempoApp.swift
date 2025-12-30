@@ -122,7 +122,7 @@ struct SyncResponse: Codable {
     let stored: Int
 }
 
-func syncSamplesToServer(_ samples: [HealthSample], onProgress: (@MainActor (Int, Int) -> Void)? = nil) async throws {
+func syncSamplesToServer(_ samples: [HealthSample], onProgress: ((Int, Int) -> Void)? = nil) async throws {
     guard let url = URL(string: serverEndpoint) else { return }
     let batchSize = 500
     var totalSynced = 0
@@ -132,9 +132,14 @@ func syncSamplesToServer(_ samples: [HealthSample], onProgress: (@MainActor (Int
         Array(samples[$0..<min($0 + batchSize, samples.count)])
     }
     
-    onProgress?(0, samples.count)
+    await MainActor.run {
+        onProgress?(0, samples.count)
+    }
     
     for batch in batches {
+        // Check for cancellation
+        try Task.checkCancellation()
+        
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let payload = try encoder.encode(batch)
@@ -154,24 +159,69 @@ func syncSamplesToServer(_ samples: [HealthSample], onProgress: (@MainActor (Int
         let syncResponse = try JSONDecoder().decode(SyncResponse.self, from: data)
         totalSynced += syncResponse.stored
         
-        onProgress?(totalSynced, samples.count)
+        await MainActor.run {
+            onProgress?(totalSynced, samples.count)
+        }
     }
     
-    onProgress?(totalSynced, samples.count)
+    await MainActor.run {
+        onProgress?(totalSynced, samples.count)
+    }
 }
 
 struct SyncProgressView: View {
     @Binding var syncStatus: [(String, String)]
+    @Binding var isSyncComplete: Bool
+    let onCancel: () -> Void
+    let onDone: () -> Void
     
     var body: some View {
-        List(syncStatus, id: \.0) { (type, status) in
-            HStack {
-                Text(type)
-                    .font(.headline)
-                Spacer()
-                Text(status)
-                    .font(.subheadline)
+        VStack(spacing: 0) {
+            List(syncStatus, id: \.0) { (type, status) in
+                HStack {
+                    Text(friendlyName(for: type))
+                        .font(.headline)
+                    Spacer()
+                    Text(status)
+                        .font(.subheadline)
+                }
             }
+            
+            // Bottom button bar
+            HStack(spacing: 12) {
+                if isSyncComplete {
+                    Button("Done") {
+                        onDone()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                } else {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding()
+            .background(Color(UIColor.systemBackground))
+        }
+    }
+    
+    private func friendlyName(for identifier: String) -> String {
+        switch identifier {
+        case "HKQuantityTypeIdentifierHeartRate":
+            return "Heart Rate"
+        case "HKQuantityTypeIdentifierRestingHeartRate":
+            return "Resting Heart Rate"
+        case "HKQuantityTypeIdentifierBodyMass":
+            return "Body Mass"
+        case "HKQuantityTypeIdentifierStepCount":
+            return "Step Count"
+        case "HKQuantityTypeIdentifierActiveEnergyBurned":
+            return "Active Energy"
+        default:
+            return identifier
         }
     }
 }
@@ -180,6 +230,8 @@ struct MainView: View {
     @StateObject private var healthKit = HealthKitManager()
     @State private var syncStatus: [(String, String)] = []
     @State private var isRequestingAuth = false
+    @State private var syncTask: Task<Void, Never>?
+    @State private var isSyncComplete = false
     
     var body: some View {
         if syncStatus.isEmpty {
@@ -228,7 +280,19 @@ struct MainView: View {
             }
             .padding()
         } else {
-            SyncProgressView(syncStatus: $syncStatus)
+            SyncProgressView(
+                syncStatus: $syncStatus,
+                isSyncComplete: $isSyncComplete,
+                onCancel: {
+                    syncTask?.cancel()
+                    syncStatus = []
+                    isSyncComplete = false
+                },
+                onDone: {
+                    syncStatus = []
+                    isSyncComplete = false
+                }
+            )
         }
         
     }
@@ -237,31 +301,87 @@ struct MainView: View {
         let sampleTypes: [HKSampleType] = healthKit.typesToRead.compactMap { $0 as? HKSampleType }
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
         syncStatus = sampleTypes.map { ($0.identifier, "Fetching...") }
+        isSyncComplete = false
         
-        for sampleType in sampleTypes {
-            Task {
-                do {
-                    let predicate = HKQuery.predicateForSamples(withStart: thirtyDaysAgo, end: Date())
-                    let qSamples = try await healthKit.fetchSamples(sampleType: sampleType, predicate: predicate)
-                    let hSamples = qSamples.map(HealthSample.init)
-                    try await syncSamplesToServer(hSamples) { (x, y) in
-                        syncStatus = syncStatus.map { status in
-                            if status.0 == sampleType.identifier {
-                                return (status.0, "Uploading: \(x)/\(y)")
-                            } else {
-                                return status
+        syncTask = Task {
+            var activeTasks: [Task<Void, Never>] = []
+            
+            for sampleType in sampleTypes {
+                let task = Task {
+                    do {
+                        // Check for cancellation before starting
+                        try Task.checkCancellation()
+                        
+                        let predicate = HKQuery.predicateForSamples(withStart: thirtyDaysAgo, end: Date())
+                        let qSamples = try await healthKit.fetchSamples(sampleType: sampleType, predicate: predicate)
+                        
+                        // Check for cancellation after fetching
+                        try Task.checkCancellation()
+                        
+                        let hSamples = qSamples.map(HealthSample.init)
+                        
+                        await MainActor.run {
+                            syncStatus = syncStatus.map { status in
+                                if status.0 == sampleType.identifier {
+                                    return (status.0, "Uploading: 0/\(hSamples.count)")
+                                } else {
+                                    return status
+                                }
+                            }
+                        }
+                        
+                        try await syncSamplesToServer(hSamples) { (x, y) in
+                            syncStatus = syncStatus.map { status in
+                                if status.0 == sampleType.identifier {
+                                    return (status.0, "Uploading: \(x)/\(y)")
+                                } else {
+                                    return status
+                                }
+                            }
+                        }
+                        
+                        await MainActor.run {
+                            syncStatus = syncStatus.map { status in
+                                if status.0 == sampleType.identifier {
+                                    return (status.0, "Complete ✓")
+                                } else {
+                                    return status
+                                }
+                            }
+                        }
+                    } catch is CancellationError {
+                        await MainActor.run {
+                            syncStatus = syncStatus.map { status in
+                                if status.0 == sampleType.identifier {
+                                    return (status.0, "Cancelled")
+                                } else {
+                                    return status
+                                }
+                            }
+                        }
+                    } catch {
+                        await MainActor.run {
+                            syncStatus = syncStatus.map { status in
+                                if status.0 == sampleType.identifier {
+                                    return (status.0, "Error: \(error.localizedDescription)")
+                                } else {
+                                    return status
+                                }
                             }
                         }
                     }
-                } catch {
-                    syncStatus = syncStatus.map { status in
-                        if status.0 == sampleType.identifier {
-                            return (status.0, "Error: \(error.localizedDescription)")
-                        } else {
-                            return status
-                        }
-                    }
                 }
+                activeTasks.append(task)
+            }
+            
+            // Wait for all tasks to complete
+            for task in activeTasks {
+                await task.value
+            }
+            
+            // Mark sync as complete
+            await MainActor.run {
+                isSyncComplete = true
             }
         }
     }
