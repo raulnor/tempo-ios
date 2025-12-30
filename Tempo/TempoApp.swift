@@ -14,7 +14,7 @@ class HealthKitManager: ObservableObject {
     
     let typesToRead: Set<HKObjectType> = [
         HKObjectType.quantityType(forIdentifier: .heartRate)!,
-//        HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
+        HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
         HKObjectType.quantityType(forIdentifier: .bodyMass)!,
         HKObjectType.quantityType(forIdentifier: .stepCount)!,
         HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
@@ -85,6 +85,8 @@ class HealthKitManager: ObservableObject {
 func unit(for type: HKSampleType) -> HKUnit {
     switch type.identifier {
     case HKQuantityTypeIdentifier.heartRate.rawValue:
+        return HKUnit.count().unitDivided(by: .minute())
+    case HKQuantityTypeIdentifier.restingHeartRate.rawValue:
         return HKUnit.count().unitDivided(by: .minute())
     case HKQuantityTypeIdentifier.bodyMass.rawValue:
         return HKUnit.pound()
