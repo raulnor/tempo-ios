@@ -124,7 +124,7 @@ struct SyncResponse: Codable {
 
 func syncSamplesToServer(_ samples: [HealthSample], onProgress: ((Int, Int) -> Void)? = nil) async throws {
     guard let url = URL(string: serverEndpoint) else { return }
-    let batchSize = 500
+    let batchSize = 4000
     var totalSynced = 0
     
     // Split into batches
