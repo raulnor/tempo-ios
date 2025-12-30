@@ -14,11 +14,11 @@ class HealthKitManager: ObservableObject {
     
     let typesToRead: Set<HKObjectType> = [
         HKObjectType.quantityType(forIdentifier: .heartRate)!,
-        HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
+//        HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
         HKObjectType.quantityType(forIdentifier: .bodyMass)!,
         HKObjectType.quantityType(forIdentifier: .stepCount)!,
         HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-        HKObjectType.workoutType()
+//        HKObjectType.workoutType()
     ]
     
     func requestAuthorization() async throws {
@@ -158,74 +158,109 @@ func syncSamplesToServer(_ samples: [HealthSample], onProgress: (@MainActor (Int
     onProgress?(totalSynced, samples.count)
 }
 
+struct SyncProgressView: View {
+    @Binding var syncStatus: [(String, String)]
+    
+    var body: some View {
+        List(syncStatus, id: \.0) { (type, status) in
+            HStack {
+                Text(type)
+                    .font(.headline)
+                Spacer()
+                Text(status)
+                    .font(.subheadline)
+            }
+        }
+    }
+}
+
 struct MainView: View {
     @StateObject private var healthKit = HealthKitManager()
-    @State private var syncStatus = "Not synced"
+    @State private var syncStatus: [(String, String)] = []
     @State private var isRequestingAuth = false
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Tempo")
-                .font(.largeTitle)
-            
-            if healthKit.isAuthorized {
-                if let hr = healthKit.latestHeartRate {
-                    Text("Latest HR: \(Int(hr)) bpm")
-                        .font(.title2)
+        if syncStatus.isEmpty {
+            VStack(spacing: 20) {
+                Text("Tempo")
+                    .font(.largeTitle)
+                
+                if healthKit.isAuthorized {
+                    if let hr = healthKit.latestHeartRate {
+                        Text("Latest HR: \(Int(hr)) bpm")
+                            .font(.title2)
+                    } else {
+                        Text("No heart rate data")
+                    }
+                    
+                    Button("Fetch Latest HR") {
+                        Task {
+                            try? await healthKit.fetchLatestHeartRate()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    Button("Sync to Server") {
+                        Task {
+                            await syncData()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                } else if isRequestingAuth {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Requesting HealthKit access...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 } else {
-                    Text("No heart rate data")
-                }
-                
-                Button("Fetch Latest HR") {
-                    Task {
-                        try? await healthKit.fetchLatestHeartRate()
+                    Button("Enable HealthKit") {
+                        Task {
+                            isRequestingAuth = true
+                            try? await healthKit.requestAuthorization()
+                            isRequestingAuth = false
+                        }
                     }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
-                
-                Button("Sync to Server") {
-                    Task {
-                        await syncData()
-                    }
-                }
-                .buttonStyle(.bordered)
-                
-                Text(syncStatus)
-                    .font(.caption)
-                
-            } else if isRequestingAuth {
-                HStack(spacing: 12) {
-                    ProgressView()
-                    Text("Requesting HealthKit access...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            } else {
-                Button("Enable HealthKit") {
-                    Task {
-                        isRequestingAuth = true
-                        try? await healthKit.requestAuthorization()
-                        isRequestingAuth = false
-                    }
-                }
-                .buttonStyle(.borderedProminent)
             }
+            .padding()
+        } else {
+            SyncProgressView(syncStatus: $syncStatus)
         }
-        .padding()
+        
     }
     
     func syncData() async {
-        syncStatus = "Fetching..."
+        let sampleTypes: [HKSampleType] = healthKit.typesToRead.compactMap { $0 as? HKSampleType }
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+        syncStatus = sampleTypes.map { ($0.identifier, "Fetching...") }
         
-        do {
-            let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
-            let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-            let predicate = HKQuery.predicateForSamples(withStart: thirtyDaysAgo, end: Date())
-            let qSamples = try await healthKit.fetchSamples(sampleType: heartRateType, predicate: predicate)
-            let hSamples = qSamples.map(HealthSample.init)
-            try await syncSamplesToServer(hSamples) { syncStatus = "Uploading: \($0) / \($1)" }
-        } catch {
-            syncStatus = "Error: \(error.localizedDescription)"
+        for sampleType in sampleTypes {
+            Task {
+                do {
+                    let predicate = HKQuery.predicateForSamples(withStart: thirtyDaysAgo, end: Date())
+                    let qSamples = try await healthKit.fetchSamples(sampleType: sampleType, predicate: predicate)
+                    let hSamples = qSamples.map(HealthSample.init)
+                    try await syncSamplesToServer(hSamples) { (x, y) in
+                        syncStatus = syncStatus.map { status in
+                            if status.0 == sampleType.identifier {
+                                return (status.0, "Uploading: \(x)/\(y)")
+                            } else {
+                                return status
+                            }
+                        }
+                    }
+                } catch {
+                    syncStatus = syncStatus.map { status in
+                        if status.0 == sampleType.identifier {
+                            return (status.0, "Error: \(error.localizedDescription)")
+                        } else {
+                            return status
+                        }
+                    }
+                }
+            }
         }
     }
 }
