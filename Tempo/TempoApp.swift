@@ -5,14 +5,6 @@ import HealthKit
 import SwiftUI
 import Combine
 
-struct HealthSample: Codable {
-    let uuid: UUID
-    let type: String
-    let quantity: Double
-    let startDate: Date
-    let endDate: Date?
-}
-
 class HealthKitManager: ObservableObject {
     let healthStore = HKHealthStore()
     
@@ -60,70 +52,64 @@ class HealthKitManager: ObservableObject {
         healthStore.execute(query)
     }
     
-    func fetchHistoricalData() async throws -> [HealthSample] {
-        var samples: [HealthSample] = []
-        
-        // Fetch heart rate samples from last 30 days
-        let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
-        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-        let predicate = HKQuery.predicateForSamples(withStart: thirtyDaysAgo, end: Date())
-        
-        let heartRateSamples = try await fetchSamples(type: heartRateType, predicate: predicate)
-        samples.append(contentsOf: heartRateSamples)
-        
-        // TODO: Add weight, workouts, RHR, steps, etc.
-        
-        return samples
-    }
-    
-    private func fetchSamples(type: HKQuantityType, predicate: NSPredicate) async throws -> [HealthSample] {
+    func fetchSamples(sampleType: HKSampleType, predicate: NSPredicate?, limit: Int = HKObjectQueryNoLimit, sortDescriptors: [NSSortDescriptor]? = nil) async throws -> [HKQuantitySample] {
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKSampleQuery(
-                sampleType: type,
+                sampleType: sampleType,
                 predicate: predicate,
-                limit: HKObjectQueryNoLimit,
-                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]
-            ) { _, samples, error in
+                limit: limit,
+                sortDescriptors: sortDescriptors
+            ) { (_query: HKSampleQuery, samples: [HKSample]?, error: (any Error)?) in
                 if let error = error {
                     continuation.resume(throwing: error)
                     return
                 }
                 
-                guard let samples = samples as? [HKQuantitySample] else {
+                if let samples = samples as? [HKQuantitySample] {
+                    continuation.resume(returning: samples)
+                } else {
                     continuation.resume(returning: [])
-                    return
                 }
-                
-                let healthSamples = samples.map { sample in
-                    HealthSample(
-                        uuid: sample.uuid,
-                        type: type.identifier,
-                        quantity: sample.quantity.doubleValue(for: self.unit(for: type)),
-                        startDate: sample.startDate,
-                        endDate: sample.endDate
-                    )
-                }
-                
-                continuation.resume(returning: healthSamples)
             }
-            
             healthStore.execute(query)
         }
     }
     
-    private func unit(for type: HKQuantityType) -> HKUnit {
-        switch type.identifier {
-        case HKQuantityTypeIdentifier.heartRate.rawValue:
-            return HKUnit.count().unitDivided(by: .minute())
-        case HKQuantityTypeIdentifier.bodyMass.rawValue:
-            return HKUnit.pound()
-        case HKQuantityTypeIdentifier.stepCount.rawValue:
-            return HKUnit.count()
-        case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
-            return HKUnit.kilocalorie()
-        default:
-            return HKUnit.count()
-        }
+    func fetchHistoricalBatch(sampleType: HKSampleType, beforeDate: Date) async throws -> [HKQuantitySample] {
+        let predicate = HKQuery.predicateForSamples(withStart: .distantPast, end: beforeDate, options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(keyPath: \HKQuantitySample.endDate, ascending: false)
+        return try await fetchSamples(sampleType: sampleType, predicate: predicate, limit: 500, sortDescriptors: [sortDescriptor])
+    }
+}
+
+func unit(for type: HKSampleType) -> HKUnit {
+    switch type.identifier {
+    case HKQuantityTypeIdentifier.heartRate.rawValue:
+        return HKUnit.count().unitDivided(by: .minute())
+    case HKQuantityTypeIdentifier.bodyMass.rawValue:
+        return HKUnit.pound()
+    case HKQuantityTypeIdentifier.stepCount.rawValue:
+        return HKUnit.count()
+    case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
+        return HKUnit.kilocalorie()
+    default:
+        return HKUnit.count()
+    }
+}
+
+struct HealthSample: Codable {
+    let uuid: UUID
+    let type: String
+    let quantity: Double
+    let startDate: Date
+    let endDate: Date?
+    
+    init(_ sample: HKQuantitySample) {
+        uuid = sample.uuid
+        type = sample.sampleType.identifier
+        quantity = sample.quantity.doubleValue(for: unit(for: sample.sampleType))
+        startDate = sample.startDate
+        endDate = sample.endDate
     }
 }
 
@@ -134,8 +120,8 @@ struct SyncResponse: Codable {
     let stored: Int
 }
 
-func syncSamplesToServer(_ samples: [HealthSample]) async throws -> Int {
-    guard let url = URL(string: serverEndpoint) else { return 0 }
+func syncSamplesToServer(_ samples: [HealthSample], onProgress: (@MainActor (Int, Int) -> Void)? = nil) async throws {
+    guard let url = URL(string: serverEndpoint) else { return }
     let batchSize = 500
     var totalSynced = 0
     
@@ -144,9 +130,9 @@ func syncSamplesToServer(_ samples: [HealthSample]) async throws -> Int {
         Array(samples[$0..<min($0 + batchSize, samples.count)])
     }
     
-    print("Syncing \(samples.count) samples in \(batches.count) batches...")
+    onProgress?(0, samples.count)
     
-    for (index, batch) in batches.enumerated() {
+    for batch in batches {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let payload = try encoder.encode(batch)
@@ -166,10 +152,10 @@ func syncSamplesToServer(_ samples: [HealthSample]) async throws -> Int {
         let syncResponse = try JSONDecoder().decode(SyncResponse.self, from: data)
         totalSynced += syncResponse.stored
         
-        print("Batch \(index + 1)/\(batches.count): stored \(syncResponse.stored) samples")
+        onProgress?(totalSynced, samples.count)
     }
     
-    return totalSynced
+    onProgress?(totalSynced, samples.count)
 }
 
 struct MainView: View {
@@ -206,7 +192,6 @@ struct MainView: View {
                 
                 Text(syncStatus)
                     .font(.caption)
-                    .foregroundColor(.secondary)
                 
             } else if isRequestingAuth {
                 HStack(spacing: 12) {
@@ -230,12 +215,15 @@ struct MainView: View {
     }
     
     func syncData() async {
-        syncStatus = "Syncing..."
+        syncStatus = "Fetching..."
         
         do {
-            let samples = try await healthKit.fetchHistoricalData()
-            let count = try await syncSamplesToServer(samples)
-            syncStatus = "Success: \(count) sent"
+            let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+            let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+            let predicate = HKQuery.predicateForSamples(withStart: thirtyDaysAgo, end: Date())
+            let qSamples = try await healthKit.fetchSamples(sampleType: heartRateType, predicate: predicate)
+            let hSamples = qSamples.map(HealthSample.init)
+            try await syncSamplesToServer(hSamples) { syncStatus = "Uploading: \($0) / \($1)" }
         } catch {
             syncStatus = "Error: \(error.localizedDescription)"
         }
