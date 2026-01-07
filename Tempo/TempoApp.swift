@@ -13,22 +13,22 @@ class HealthKitManager: ObservableObject {
     @Published var restingHeartRate: Double?
     
     let typesToRead: Set<HKObjectType> = [
-        // General
+        HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+        HKObjectType.quantityType(forIdentifier: .appleSleepingWristTemperature)!,
+        HKObjectType.quantityType(forIdentifier: .appleWalkingSteadiness)!,
+        HKObjectType.quantityType(forIdentifier: .bodyFatPercentage)!,
+        HKObjectType.quantityType(forIdentifier: .bodyMass)!,
         HKObjectType.quantityType(forIdentifier: .heartRate)!,
         HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
-        HKObjectType.quantityType(forIdentifier: .bodyMass)!,
-        HKObjectType.quantityType(forIdentifier: .stepCount)!,
-        HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-        // Walking / Gait
-        HKObjectType.quantityType(forIdentifier: .appleWalkingSteadiness)!,
+        HKObjectType.quantityType(forIdentifier: .runningPower)!,
         HKObjectType.quantityType(forIdentifier: .sixMinuteWalkTestDistance)!,
-        HKObjectType.quantityType(forIdentifier: .walkingSpeed)!,
-        HKObjectType.quantityType(forIdentifier: .walkingStepLength)!,
-        HKObjectType.quantityType(forIdentifier: .walkingAsymmetryPercentage)!,
-        HKObjectType.quantityType(forIdentifier: .walkingDoubleSupportPercentage)!,
         HKObjectType.quantityType(forIdentifier: .stairAscentSpeed)!,
         HKObjectType.quantityType(forIdentifier: .stairDescentSpeed)!,
-//        HKObjectType.workoutType()
+        HKObjectType.quantityType(forIdentifier: .stepCount)!,
+        HKObjectType.quantityType(forIdentifier: .walkingAsymmetryPercentage)!,
+        HKObjectType.quantityType(forIdentifier: .walkingDoubleSupportPercentage)!,
+        HKObjectType.quantityType(forIdentifier: .walkingSpeed)!,
+        HKObjectType.quantityType(forIdentifier: .walkingStepLength)!,
     ]
     
     func requestAuthorization() async throws {
@@ -94,34 +94,23 @@ class HealthKitManager: ObservableObject {
 
 func unit(for type: HKSampleType) -> HKUnit {
     switch type.identifier {
-    case HKQuantityTypeIdentifier.heartRate.rawValue:
-        return HKUnit.count().unitDivided(by: .minute())
-    case HKQuantityTypeIdentifier.restingHeartRate.rawValue:
-        return HKUnit.count().unitDivided(by: .minute())
-    case HKQuantityTypeIdentifier.bodyMass.rawValue:
-        return HKUnit.pound()
-    case HKQuantityTypeIdentifier.stepCount.rawValue:
-        return HKUnit.count()
-    case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
-        return HKUnit.kilocalorie()
-    case HKQuantityTypeIdentifier.appleWalkingSteadiness.rawValue:
-        return HKUnit.percent()
-    case HKQuantityTypeIdentifier.sixMinuteWalkTestDistance.rawValue:
-        return HKUnit.meter()
-    case HKQuantityTypeIdentifier.walkingSpeed.rawValue:
-        return HKUnit.meter().unitDivided(by: HKUnit.second())
-    case HKQuantityTypeIdentifier.walkingStepLength.rawValue:
-        return HKUnit.meter()
-    case HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue:
-        return HKUnit.percent()
-    case HKQuantityTypeIdentifier.walkingDoubleSupportPercentage.rawValue:
-        return HKUnit.percent()
-    case HKQuantityTypeIdentifier.stairAscentSpeed.rawValue:
-        return HKUnit.meter().unitDivided(by: HKUnit.second())
-    case HKQuantityTypeIdentifier.stairDescentSpeed.rawValue:
-        return HKUnit.meter().unitDivided(by: HKUnit.second())
-    case HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue:
-        return HKUnit.percent()
+    case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue: return HKUnit.kilocalorie()
+    case HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue: return HKUnit.degreeFahrenheit()
+    case HKQuantityTypeIdentifier.appleWalkingSteadiness.rawValue: return HKUnit.percent()
+    case HKQuantityTypeIdentifier.bodyFatPercentage.rawValue: return HKUnit.percent()
+    case HKQuantityTypeIdentifier.bodyMass.rawValue: return HKUnit.pound()
+    case HKQuantityTypeIdentifier.heartRate.rawValue: return HKUnit.count().unitDivided(by: .minute())
+    case HKQuantityTypeIdentifier.restingHeartRate.rawValue: return HKUnit.count().unitDivided(by: .minute())
+    case HKQuantityTypeIdentifier.runningPower.rawValue: return HKUnit.watt()
+    case HKQuantityTypeIdentifier.sixMinuteWalkTestDistance.rawValue: return HKUnit.meter()
+    case HKQuantityTypeIdentifier.stairAscentSpeed.rawValue: return HKUnit.meter().unitDivided(by: HKUnit.second())
+    case HKQuantityTypeIdentifier.stairDescentSpeed.rawValue: return HKUnit.meter().unitDivided(by: HKUnit.second())
+    case HKQuantityTypeIdentifier.stepCount.rawValue: return HKUnit.count()
+    case HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue: return HKUnit.percent()
+    case HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue: return HKUnit.percent()
+    case HKQuantityTypeIdentifier.walkingDoubleSupportPercentage.rawValue: return HKUnit.percent()
+    case HKQuantityTypeIdentifier.walkingSpeed.rawValue: return HKUnit.meter().unitDivided(by: HKUnit.second())
+    case HKQuantityTypeIdentifier.walkingStepLength.rawValue: return HKUnit.meter()
     default:
         assert(false, "WARNING: unit/1 not implemented for (\(type.identifier))")
         return HKUnit.count()
@@ -130,32 +119,22 @@ func unit(for type: HKSampleType) -> HKUnit {
 
 func friendlyName(for identifier: String) -> String {
     switch identifier {
-    case "HKQuantityTypeIdentifierHeartRate":
-        return "Heart Rate"
-    case "HKQuantityTypeIdentifierRestingHeartRate":
-        return "Resting Heart Rate"
-    case "HKQuantityTypeIdentifierBodyMass":
-        return "Body Mass"
-    case "HKQuantityTypeIdentifierStepCount":
-        return "Step Count"
-    case "HKQuantityTypeIdentifierActiveEnergyBurned":
-        return "Active Energy"
-    case "HKQuantityTypeIdentifierAppleWalkingSteadiness":
-        return "Walking Steadiness"
-    case "HKQuantityTypeIdentifierSixMinuteWalkTestDistance":
-        return "Six-Minute Walk"
-    case "HKQuantityTypeIdentifierWalkingSpeed":
-        return "Walking Speed"
-    case "HKQuantityTypeIdentifierWalkingStepLength":
-        return "Walking Step Length"
-    case "HKQuantityTypeIdentifierWalkingAsymmetryPercentage":
-        return "Walking Asymmetry %"
-    case "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage":
-        return "Double Support Time"
-    case "HKQuantityTypeIdentifierStairAscentSpeed":
-        return "Stair Speed: Up"
-    case "HKQuantityTypeIdentifierStairDescentSpeed":
-        return "Stair Speed: Down"
+    case "HKQuantityTypeIdentifierActiveEnergyBurned": return "Active Energy"
+    case "HKQuantityTypeIdentifierAppleSleepingWristTemperature": return "Wrist Temperature"
+    case "HKQuantityTypeIdentifierAppleWalkingSteadiness": return "Walking Steadiness"
+    case "HKQuantityTypeIdentifierBodyFatPercentage": return "Body Fat Percentage"
+    case "HKQuantityTypeIdentifierBodyMass": return "Body Mass"
+    case "HKQuantityTypeIdentifierHeartRate": return "Heart Rate"
+    case "HKQuantityTypeIdentifierRestingHeartRate": return "Resting Heart Rate"
+    case "HKQuantityTypeIdentifierRunningPower": return "Running Power"
+    case "HKQuantityTypeIdentifierSixMinuteWalkTestDistance": return "Six-Minute Walk"
+    case "HKQuantityTypeIdentifierStairAscentSpeed": return "Stair Speed: Up"
+    case "HKQuantityTypeIdentifierStairDescentSpeed": return "Stair Speed: Down"
+    case "HKQuantityTypeIdentifierStepCount": return "Step Count"
+    case "HKQuantityTypeIdentifierWalkingAsymmetryPercentage": return "Walking Asymmetry %"
+    case "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage": return "Double Support Time"
+    case "HKQuantityTypeIdentifierWalkingSpeed": return "Walking Speed"
+    case "HKQuantityTypeIdentifierWalkingStepLength": return "Walking Step Length"
     default:
         assert(false, "friendlyName/1 not implemented for (\(identifier))!")
         return identifier
