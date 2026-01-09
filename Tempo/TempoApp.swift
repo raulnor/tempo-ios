@@ -13,22 +13,59 @@ class HealthKitManager: ObservableObject {
     @Published var restingHeartRate: Double?
     
     let typesToRead: Set<HKObjectType> = [
+        // Activity & Fitness
         HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-        HKObjectType.quantityType(forIdentifier: .appleSleepingWristTemperature)!,
-        HKObjectType.quantityType(forIdentifier: .appleWalkingSteadiness)!,
+        HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
+        HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+        HKObjectType.quantityType(forIdentifier: .flightsClimbed)!,
+        HKObjectType.quantityType(forIdentifier: .stepCount)!,
+        HKObjectType.quantityType(forIdentifier: .runningPower)!,
+
+        // Body Measurements
         HKObjectType.quantityType(forIdentifier: .bodyFatPercentage)!,
         HKObjectType.quantityType(forIdentifier: .bodyMass)!,
+        HKObjectType.quantityType(forIdentifier: .height)!,
+        HKObjectType.quantityType(forIdentifier: .leanBodyMass)!,
+        HKObjectType.quantityType(forIdentifier: .waistCircumference)!,
+
+        // Cardiovascular
         HKObjectType.quantityType(forIdentifier: .heartRate)!,
         HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
-        HKObjectType.quantityType(forIdentifier: .runningPower)!,
+        HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
+        HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic)!,
+        HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)!,
+
+        // Respiratory
+        HKObjectType.quantityType(forIdentifier: .oxygenSaturation)!,
+        HKObjectType.quantityType(forIdentifier: .respiratoryRate)!,
+        HKObjectType.quantityType(forIdentifier: .vo2Max)!,
+
+        // Temperature
+        HKObjectType.quantityType(forIdentifier: .appleSleepingWristTemperature)!,
+        HKObjectType.quantityType(forIdentifier: .bodyTemperature)!,
+
+        // Walking & Mobility
+        HKObjectType.quantityType(forIdentifier: .appleWalkingSteadiness)!,
         HKObjectType.quantityType(forIdentifier: .sixMinuteWalkTestDistance)!,
         HKObjectType.quantityType(forIdentifier: .stairAscentSpeed)!,
         HKObjectType.quantityType(forIdentifier: .stairDescentSpeed)!,
-        HKObjectType.quantityType(forIdentifier: .stepCount)!,
         HKObjectType.quantityType(forIdentifier: .walkingAsymmetryPercentage)!,
         HKObjectType.quantityType(forIdentifier: .walkingDoubleSupportPercentage)!,
         HKObjectType.quantityType(forIdentifier: .walkingSpeed)!,
         HKObjectType.quantityType(forIdentifier: .walkingStepLength)!,
+
+        // Nutrition
+        HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryProtein)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryCarbohydrates)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryFiber)!,
+        HKObjectType.quantityType(forIdentifier: .dietarySugar)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryFatTotal)!,
+        HKObjectType.quantityType(forIdentifier: .dietarySodium)!,
+        HKObjectType.quantityType(forIdentifier: .dietaryWater)!,
+
+        // Blood Glucose & Metabolic
+        HKObjectType.quantityType(forIdentifier: .bloodGlucose)!,
     ]
     
     func requestAuthorization() async throws {
@@ -94,23 +131,60 @@ class HealthKitManager: ObservableObject {
 
 func unit(for type: HKSampleType) -> HKUnit {
     switch type.identifier {
+    // Activity & Fitness
     case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue: return HKUnit.kilocalorie()
-    case HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue: return HKUnit.degreeFahrenheit()
-    case HKQuantityTypeIdentifier.appleWalkingSteadiness.rawValue: return HKUnit.percent()
+    case HKQuantityTypeIdentifier.basalEnergyBurned.rawValue: return HKUnit.kilocalorie()
+    case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue: return HKUnit.mile()
+    case HKQuantityTypeIdentifier.flightsClimbed.rawValue: return HKUnit.count()
+    case HKQuantityTypeIdentifier.stepCount.rawValue: return HKUnit.count()
+    case HKQuantityTypeIdentifier.runningPower.rawValue: return HKUnit.watt()
+
+    // Body Measurements
     case HKQuantityTypeIdentifier.bodyFatPercentage.rawValue: return HKUnit.percent()
     case HKQuantityTypeIdentifier.bodyMass.rawValue: return HKUnit.pound()
+    case HKQuantityTypeIdentifier.height.rawValue: return HKUnit.inch()
+    case HKQuantityTypeIdentifier.leanBodyMass.rawValue: return HKUnit.pound()
+    case HKQuantityTypeIdentifier.waistCircumference.rawValue: return HKUnit.inch()
+
+    // Cardiovascular
     case HKQuantityTypeIdentifier.heartRate.rawValue: return HKUnit.count().unitDivided(by: .minute())
     case HKQuantityTypeIdentifier.restingHeartRate.rawValue: return HKUnit.count().unitDivided(by: .minute())
-    case HKQuantityTypeIdentifier.runningPower.rawValue: return HKUnit.watt()
+    case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue: return HKUnit.secondUnit(with: .milli)
+    case HKQuantityTypeIdentifier.bloodPressureSystolic.rawValue: return HKUnit.millimeterOfMercury()
+    case HKQuantityTypeIdentifier.bloodPressureDiastolic.rawValue: return HKUnit.millimeterOfMercury()
+
+    // Respiratory
+    case HKQuantityTypeIdentifier.oxygenSaturation.rawValue: return HKUnit.percent()
+    case HKQuantityTypeIdentifier.respiratoryRate.rawValue: return HKUnit.count().unitDivided(by: .minute())
+    case HKQuantityTypeIdentifier.vo2Max.rawValue: return HKUnit.literUnit(with: .milli).unitDivided(by: HKUnit.gramUnit(with: .kilo).unitMultiplied(by: .minute()))
+
+    // Temperature
+    case HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue: return HKUnit.degreeFahrenheit()
+    case HKQuantityTypeIdentifier.bodyTemperature.rawValue: return HKUnit.degreeFahrenheit()
+
+    // Walking & Mobility
+    case HKQuantityTypeIdentifier.appleWalkingSteadiness.rawValue: return HKUnit.percent()
     case HKQuantityTypeIdentifier.sixMinuteWalkTestDistance.rawValue: return HKUnit.meter()
     case HKQuantityTypeIdentifier.stairAscentSpeed.rawValue: return HKUnit.meter().unitDivided(by: HKUnit.second())
     case HKQuantityTypeIdentifier.stairDescentSpeed.rawValue: return HKUnit.meter().unitDivided(by: HKUnit.second())
-    case HKQuantityTypeIdentifier.stepCount.rawValue: return HKUnit.count()
-    case HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue: return HKUnit.percent()
     case HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue: return HKUnit.percent()
     case HKQuantityTypeIdentifier.walkingDoubleSupportPercentage.rawValue: return HKUnit.percent()
     case HKQuantityTypeIdentifier.walkingSpeed.rawValue: return HKUnit.meter().unitDivided(by: HKUnit.second())
     case HKQuantityTypeIdentifier.walkingStepLength.rawValue: return HKUnit.meter()
+
+    // Nutrition
+    case HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue: return HKUnit.kilocalorie()
+    case HKQuantityTypeIdentifier.dietaryProtein.rawValue: return HKUnit.gram()
+    case HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue: return HKUnit.gram()
+    case HKQuantityTypeIdentifier.dietaryFiber.rawValue: return HKUnit.gram()
+    case HKQuantityTypeIdentifier.dietarySugar.rawValue: return HKUnit.gram()
+    case HKQuantityTypeIdentifier.dietaryFatTotal.rawValue: return HKUnit.gram()
+    case HKQuantityTypeIdentifier.dietarySodium.rawValue: return HKUnit.gramUnit(with: .milli)
+    case HKQuantityTypeIdentifier.dietaryWater.rawValue: return HKUnit.literUnit(with: .milli)
+
+    // Blood Glucose & Metabolic
+    case HKQuantityTypeIdentifier.bloodGlucose.rawValue: return HKUnit.gramUnit(with: .milli).unitDivided(by: .literUnit(with: .deci))
+
     default:
         assert(false, "WARNING: unit/1 not implemented for (\(type.identifier))")
         return HKUnit.count()
@@ -119,22 +193,60 @@ func unit(for type: HKSampleType) -> HKUnit {
 
 func friendlyName(for identifier: String) -> String {
     switch identifier {
+    // Activity & Fitness
     case "HKQuantityTypeIdentifierActiveEnergyBurned": return "Active Energy"
-    case "HKQuantityTypeIdentifierAppleSleepingWristTemperature": return "Wrist Temperature"
-    case "HKQuantityTypeIdentifierAppleWalkingSteadiness": return "Walking Steadiness"
-    case "HKQuantityTypeIdentifierBodyFatPercentage": return "Body Fat Percentage"
-    case "HKQuantityTypeIdentifierBodyMass": return "Body Mass"
+    case "HKQuantityTypeIdentifierBasalEnergyBurned": return "Resting Energy"
+    case "HKQuantityTypeIdentifierDistanceWalkingRunning": return "Distance"
+    case "HKQuantityTypeIdentifierFlightsClimbed": return "Flights Climbed"
+    case "HKQuantityTypeIdentifierStepCount": return "Step Count"
+    case "HKQuantityTypeIdentifierRunningPower": return "Running Power"
+
+    // Body Measurements
+    case "HKQuantityTypeIdentifierBodyFatPercentage": return "Body Fat %"
+    case "HKQuantityTypeIdentifierBodyMass": return "Weight"
+    case "HKQuantityTypeIdentifierHeight": return "Height"
+    case "HKQuantityTypeIdentifierLeanBodyMass": return "Lean Body Mass"
+    case "HKQuantityTypeIdentifierWaistCircumference": return "Waist Circumference"
+
+    // Cardiovascular
     case "HKQuantityTypeIdentifierHeartRate": return "Heart Rate"
     case "HKQuantityTypeIdentifierRestingHeartRate": return "Resting Heart Rate"
-    case "HKQuantityTypeIdentifierRunningPower": return "Running Power"
+    case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": return "HRV (SDNN)"
+    case "HKQuantityTypeIdentifierBloodPressureSystolic": return "Blood Pressure (Systolic)"
+    case "HKQuantityTypeIdentifierBloodPressureDiastolic": return "Blood Pressure (Diastolic)"
+
+    // Respiratory
+    case "HKQuantityTypeIdentifierOxygenSaturation": return "Blood Oxygen"
+    case "HKQuantityTypeIdentifierRespiratoryRate": return "Respiratory Rate"
+    case "HKQuantityTypeIdentifierVO2Max": return "VO2 Max"
+
+    // Temperature
+    case "HKQuantityTypeIdentifierAppleSleepingWristTemperature": return "Wrist Temperature"
+    case "HKQuantityTypeIdentifierBodyTemperature": return "Body Temperature"
+
+    // Walking & Mobility
+    case "HKQuantityTypeIdentifierAppleWalkingSteadiness": return "Walking Steadiness"
     case "HKQuantityTypeIdentifierSixMinuteWalkTestDistance": return "Six-Minute Walk"
     case "HKQuantityTypeIdentifierStairAscentSpeed": return "Stair Speed: Up"
     case "HKQuantityTypeIdentifierStairDescentSpeed": return "Stair Speed: Down"
-    case "HKQuantityTypeIdentifierStepCount": return "Step Count"
     case "HKQuantityTypeIdentifierWalkingAsymmetryPercentage": return "Walking Asymmetry %"
     case "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage": return "Double Support Time"
     case "HKQuantityTypeIdentifierWalkingSpeed": return "Walking Speed"
-    case "HKQuantityTypeIdentifierWalkingStepLength": return "Walking Step Length"
+    case "HKQuantityTypeIdentifierWalkingStepLength": return "Step Length"
+
+    // Nutrition
+    case "HKQuantityTypeIdentifierDietaryEnergyConsumed": return "Calories Consumed"
+    case "HKQuantityTypeIdentifierDietaryProtein": return "Protein"
+    case "HKQuantityTypeIdentifierDietaryCarbohydrates": return "Carbohydrates"
+    case "HKQuantityTypeIdentifierDietaryFiber": return "Fiber"
+    case "HKQuantityTypeIdentifierDietarySugar": return "Sugar"
+    case "HKQuantityTypeIdentifierDietaryFatTotal": return "Total Fat"
+    case "HKQuantityTypeIdentifierDietarySodium": return "Sodium"
+    case "HKQuantityTypeIdentifierDietaryWater": return "Water"
+
+    // Blood Glucose & Metabolic
+    case "HKQuantityTypeIdentifierBloodGlucose": return "Blood Glucose"
+
     default:
         assert(false, "friendlyName/1 not implemented for (\(identifier))!")
         return identifier
