@@ -280,258 +280,60 @@ struct SyncResponse: Codable {
     let stored: Int
 }
 
-func syncSamplesToServer(_ samples: [HealthSample], onProgress: ((Int, Int) -> Void)? = nil) async throws {
-    guard let url = URL(string: serverEndpoint) else { return }
-    let batchSize = 4000
-    var totalSynced = 0
-    
-    // Split into batches
-    let batches = stride(from: 0, to: samples.count, by: batchSize).map {
-        Array(samples[$0..<min($0 + batchSize, samples.count)])
-    }
-    
-    await MainActor.run {
-        onProgress?(0, samples.count)
-    }
-    
-    for batch in batches {
-        // Check for cancellation
-        try Task.checkCancellation()
-        
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let payload = try encoder.encode(batch)
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = payload
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
-        
-        let syncResponse = try JSONDecoder().decode(SyncResponse.self, from: data)
-        totalSynced += syncResponse.stored
-        
-        await MainActor.run {
-            onProgress?(totalSynced, samples.count)
-        }
-    }
-    
-    await MainActor.run {
-        onProgress?(totalSynced, samples.count)
-    }
-}
-
-struct SyncProgressView: View {
-    @Binding var syncStatus: [(String, String)]
-    @Binding var isSyncComplete: Bool
-    let onCancel: () -> Void
-    let onDone: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            List(syncStatus, id: \.0) { (type, status) in
-                HStack {
-                    Text(friendlyName(for: type))
-                        .font(.headline)
-                    Spacer()
-                    Text(status)
-                        .font(.subheadline)
-                }
-            }
-            
-            // Bottom button bar
-            HStack(spacing: 12) {
-                if isSyncComplete {
-                    Button("Done") {
-                        onDone()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
-                } else {
-                    Button("Cancel") {
-                        onCancel()
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding()
-            .background(Color(UIColor.systemBackground))
-        }
-    }
-}
-
 struct MainView: View {
     @StateObject private var healthKit = HealthKitManager()
-    @State private var syncStatus: [(String, String)] = []
     @State private var isRequestingAuth = false
-    @State private var syncTask: Task<Void, Never>?
-    @State private var isSyncComplete = false
     
     var body: some View {
-        if syncStatus.isEmpty {
-            VStack(spacing: 20) {
-                Text("Tempo")
-                    .font(.largeTitle)
-                
-                if healthKit.isAuthorized {
-                    if let hr = healthKit.latestHeartRate {
-                        Text("Latest HR: \(Int(hr)) bpm")
-                            .font(.title2)
-                    } else {
-                        Text("No heart rate data")
-                    }
-                    
-                    Button("Fetch Latest HR") {
-                        Task {
-                            try? await healthKit.fetchLatestHeartRate()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    
-                    Button("Sync to Server") {
-                        Task {
-                            await syncData()
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                } else if isRequestingAuth {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Requesting HealthKit access...")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+        VStack(spacing: 20) {
+            Text("Tempo")
+                .font(.largeTitle)
+            
+            if healthKit.isAuthorized {
+                if let hr = healthKit.latestHeartRate {
+                    Text("Latest HR: \(Int(hr)) bpm")
+                        .font(.title2)
                 } else {
-                    Button("Enable HealthKit") {
-                        Task {
-                            isRequestingAuth = true
-                            try? await healthKit.requestAuthorization()
-                            isRequestingAuth = false
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
+                    Text("No heart rate data")
                 }
-            }
-            .padding()
-        } else {
-            SyncProgressView(
-                syncStatus: $syncStatus,
-                isSyncComplete: $isSyncComplete,
-                onCancel: {
-                    syncTask?.cancel()
-                    syncStatus = []
-                    isSyncComplete = false
-                },
-                onDone: {
-                    syncStatus = []
-                    isSyncComplete = false
-                }
-            )
-        }
-        
-    }
-    
-    func syncData() async {
-        let sampleTypes: [HKSampleType] = healthKit.typesToRead.compactMap { $0 as? HKSampleType }
-        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-        syncStatus = sampleTypes.map { ($0.identifier, "Fetching...") }
-        isSyncComplete = false
-        
-        syncTask = Task {
-            var activeTasks: [Task<Void, Never>] = []
-            
-            for sampleType in sampleTypes {
-                let task = Task {
-                    do {
-                        // Check for cancellation before starting
-                        try Task.checkCancellation()
-                        
-                        let predicate = HKQuery.predicateForSamples(withStart: thirtyDaysAgo, end: Date())
-                        let qSamples = try await healthKit.fetchSamples(sampleType: sampleType, predicate: predicate)
-                        
-                        // Check for cancellation after fetching
-                        try Task.checkCancellation()
-                        
-                        let hSamples = qSamples.map(HealthSample.init)
-                        
-                        await MainActor.run {
-                            syncStatus = syncStatus.map { status in
-                                if status.0 == sampleType.identifier {
-                                    return (status.0, "Uploading: 0/\(hSamples.count)")
-                                } else {
-                                    return status
-                                }
-                            }
-                        }
-                        
-                        try await syncSamplesToServer(hSamples) { (x, y) in
-                            syncStatus = syncStatus.map { status in
-                                if status.0 == sampleType.identifier {
-                                    return (status.0, "Uploading: \(x)/\(y)")
-                                } else {
-                                    return status
-                                }
-                            }
-                        }
-                        
-                        await MainActor.run {
-                            syncStatus = syncStatus.map { status in
-                                if status.0 == sampleType.identifier {
-                                    return (status.0, "Complete ✓")
-                                } else {
-                                    return status
-                                }
-                            }
-                        }
-                    } catch is CancellationError {
-                        await MainActor.run {
-                            syncStatus = syncStatus.map { status in
-                                if status.0 == sampleType.identifier {
-                                    return (status.0, "Cancelled")
-                                } else {
-                                    return status
-                                }
-                            }
-                        }
-                    } catch {
-                        await MainActor.run {
-                            syncStatus = syncStatus.map { status in
-                                if status.0 == sampleType.identifier {
-                                    return (status.0, "Error: \(error.localizedDescription)")
-                                } else {
-                                    return status
-                                }
-                            }
-                        }
+                
+                Button("Fetch Latest HR") {
+                    Task {
+                        try? await healthKit.fetchLatestHeartRate()
                     }
                 }
-                activeTasks.append(task)
-            }
-            
-            // Wait for all tasks to complete
-            for task in activeTasks {
-                await task.value
-            }
-            
-            // Mark sync as complete
-            await MainActor.run {
-                isSyncComplete = true
+                .buttonStyle(.borderedProminent)
+                    
+            } else if isRequestingAuth {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Requesting HealthKit access...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                Button("Enable HealthKit") {
+                    Task {
+                        isRequestingAuth = true
+                        try? await healthKit.requestAuthorization()
+                        isRequestingAuth = false
+                    }
+                }
+                .buttonStyle(.borderedProminent)
             }
         }
+        .padding()
     }
 }
 
 @main struct TempoApp: App {
     var body: some Scene {
         WindowGroup {
-            MainView()
+            TabView {
+                MainView()
+                    .tabItem { Label("Home", systemImage: "heart.fill") }
+                TempoSyncView()
+            }
         }
     }
 }
