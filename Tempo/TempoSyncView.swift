@@ -100,7 +100,7 @@ struct TempoSyncView: View {
                 }
             }
         }
-        .tabItem { Label("Sync", systemImage: syncNotActive ? "hourglass.circle" : "arrow.clockwise") }
+        .tabItem { Label("Sync", systemImage: syncNotActive ? "arrow.clockwise" : "hourglass.circle") }
     }
     
     func syncData() async {
