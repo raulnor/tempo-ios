@@ -333,6 +333,7 @@ struct MainView: View {
                 MainView()
                     .tabItem { Label("Home", systemImage: "heart.fill") }
                 TempoSyncView()
+                IncrementalSyncView()
             }
         }
     }
